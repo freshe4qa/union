@@ -41,7 +41,7 @@ fi
 if [ ! $WALLET ]; then
 	echo "export WALLET=wallet" >> $HOME/.bash_profile
 fi
-echo "export UNION_CHAIN_ID=union-testnet-4" >> $HOME/.bash_profile
+echo "export UNION_CHAIN_ID=union-testnet-5" >> $HOME/.bash_profile
 source $HOME/.bash_profile
 
 # update
@@ -63,18 +63,21 @@ fi
 
 # download binary
 mkdir -p $HOME/.union/cosmovisor/genesis/bin
-wget -O $HOME/.union/cosmovisor/genesis/bin/uniond https://snapshots.kjnodes.com/union-testnet/uniond-0.15.0-linux-amd64
+wget -O $HOME/.union/cosmovisor/genesis/bin/uniond https://snapshots.kjnodes.com/union-testnet/uniond-genesis-linux-amd64
 chmod +x $HOME/.union/cosmovisor/genesis/bin/uniond
 
 sudo ln -s $HOME/.union/cosmovisor/genesis $HOME/.union/cosmovisor/current -f
 sudo ln -s $HOME/.union/cosmovisor/current/bin/uniond /usr/local/bin/uniond -f
 
+go install cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@v1.5.0
+
 # config
+alias uniond='uniond --home=/home/union-testnet/.union/'
 uniond config chain-id $UNION_CHAIN_ID
 uniond config keyring-backend test
 
 # init
-uniond init $NODENAME bn254 --chain-id $UNION_CHAIN_ID
+uniond init $NODENAME bn254 --chain-id union-testnet-5
 
 # download genesis and addrbook
 curl -Ls https://snapshots.kjnodes.com/union-testnet/genesis.json > $HOME/.union/config/genesis.json
@@ -85,7 +88,7 @@ sed -i -e "s|^minimum-gas-prices *=.*|minimum-gas-prices = \"0muno\"|" $HOME/.un
 
 # set peers and seeds
 SEEDS="3f472746f46493309650e5a033076689996c8881@union-testnet.rpc.kjnodes.com:17159"
-PEERS="835c7f8a5ba11a53244ca9346ea5324c3a4ba3ed@188.40.66.173:24656,7c743b507ec3b67bc790c826ec471d2635c992f7@88.99.3.158:24656,2dad4529930a677fe267cedcac86043d09acdc36@65.108.105.48:24656,d5519e378247dfb61dfe90652d1fe3e2b3005a5b@65.109.68.190:17156,5543e759001443e5953b7a23d8d424c35454deea@167.235.178.134:24656,821eade3cdada32cd15bfc7bd941e5bfad173d35@5.9.115.189:26656,65d3fbc95488503554d554f6332db4dbd68accb0@65.109.69.239:15007,470bf421c6887def16e65dfe05cf1344826be06b@95.214.53.187:32656"
+PEERS="3ebf2e11e771ef7db14217e1a8fa365fdf028eb4@65.108.134.215:28656,017f2c708749c0a789e794f16face1b9662c63d0@23.111.23.233:16656,89e7c090409da29a3525ecd2e9676579cfab487c@213.239.214.73:26656,ec244b6ea1ff9314e32e269045d08035f53c71cd@167.235.178.134:24656,a3fb532f4386cfdf01a5a1bdf0a568457b9dc310@153.92.126.130:26656,2dad4529930a677fe267cedcac86043d09acdc36@65.108.105.48:24656,a24e67b59b0541a03d6faec19b74bc40a4cb1452@144.217.211.107:26656"
 sed -i -e "s/^seeds *=.*/seeds = \"$SEEDS\"/; s/^persistent_peers *=.*/persistent_peers = \"$PEERS\"/" $HOME/.union/config/config.toml
 
 # disable indexing
@@ -107,16 +110,22 @@ sed -i "s/snapshot-interval *=.*/snapshot-interval = 0/g" $HOME/.union/config/ap
 sed -i -e "s/prometheus = false/prometheus = true/" $HOME/.union/config/config.toml
 
 # create service
-sudo tee /etc/systemd/system/uniond.service > /dev/null << EOF
+sudo tee /etc/systemd/system/union.service > /dev/null << EOF
 [Unit]
-Description=Union Node
+Description=union node service
 After=network-online.target
+
 [Service]
 User=$USER
-ExecStart=$(which uniond) start
+ExecStart=$(which cosmovisor) run start --home=/home/union-testnet/.union/
 Restart=on-failure
 RestartSec=10
-LimitNOFILE=10000
+LimitNOFILE=65535
+Environment="DAEMON_HOME=$HOME/.union"
+Environment="DAEMON_NAME=uniond"
+Environment="UNSAFE_SKIP_BACKUP=true"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:$HOME/.union/cosmovisor/current/bin"
+
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -124,11 +133,12 @@ EOF
 # reset
 uniond tendermint unsafe-reset-all --home $HOME/.union --keep-addr-book 
 curl -L https://snapshots.kjnodes.com/union-testnet/snapshot_latest.tar.lz4 | tar -Ilz4 -xf - -C $HOME/.union
+[[ -f $HOME/.union/data/upgrade-info.json ]] && cp $HOME/.union/data/upgrade-info.json $HOME/.union/cosmovisor/genesis/upgrade-info.json
 
 # start service
 sudo systemctl daemon-reload
-sudo systemctl enable uniond
-sudo systemctl restart uniond
+sudo systemctl enable union.service
+sudo systemctl restart union.service
 
 break
 ;;
@@ -149,15 +159,15 @@ break
 
 "Create Validator")
 uniond tx staking create-validator \
---amount=1000000muno \
---pubkey=$(uniond tendermint show-validator) \
---moniker="$NODENAME" \
---chain-id=union-testnet-4 \
+--amount 1000000muno \
+--pubkey $(uniond tendermint show-validator) \
+--moniker "$NODENAME" \
+--chain-id union-testnet-5 \
 --commission-rate 0.05 \
 --commission-max-rate 0.20 \
 --commission-max-change-rate 0.01 \
---min-self-delegation=1 \
---from=wallet \
+--min-self-delegation 1 \
+--from wallet \
 --gas-adjustment 1.4 \
 --gas auto \
 --gas-prices 0muno \
