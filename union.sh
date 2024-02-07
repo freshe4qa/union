@@ -62,17 +62,12 @@ source $HOME/.bash_profile
 fi
 
 # download binary
-mkdir -p $HOME/.union/cosmovisor/genesis/bin
-wget -O $HOME/.union/cosmovisor/genesis/bin/uniond https://snapshots.kjnodes.com/union-testnet/uniond-genesis-linux-amd64
-chmod +x $HOME/.union/cosmovisor/genesis/bin/uniond
-
-sudo ln -s $HOME/.union/cosmovisor/genesis $HOME/.union/cosmovisor/current -f
-sudo ln -s $HOME/.union/cosmovisor/current/bin/uniond /usr/local/bin/uniond -f
-
-go install cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@v1.5.0
+cd $HOME
+wget http://uniont.binary.stavr.tech:15/union/uniond
+chmod +x uniond
+mv uniond $HOME/go/bin/
 
 # config
-alias uniond='uniond --home=/home/union-testnet/.union/'
 uniond config chain-id $UNION_CHAIN_ID
 uniond config keyring-backend test
 
@@ -80,8 +75,8 @@ uniond config keyring-backend test
 uniond init $NODENAME bn254 --chain-id union-testnet-5
 
 # download genesis and addrbook
-curl -Ls https://snapshots.kjnodes.com/union-testnet/genesis.json > $HOME/.union/config/genesis.json
-curl -Ls https://snapshots.kjnodes.com/union-testnet/addrbook.json > $HOME/.union/config/addrbook.json
+wget -O $HOME/.union/config/genesis.json "https://raw.githubusercontent.com/obajay/nodes-Guides/main/Projects/Union/genesis.json"
+wget -O $HOME/.union/config/addrbook.json "https://raw.githubusercontent.com/obajay/nodes-Guides/main/Projects/Union/addrbook.json"
 
 # set minimum gas price
 sed -i -e "s|^minimum-gas-prices *=.*|minimum-gas-prices = \"0muno\"|" $HOME/.union/config/app.toml
@@ -110,21 +105,17 @@ sed -i "s/snapshot-interval *=.*/snapshot-interval = 0/g" $HOME/.union/config/ap
 sed -i -e "s/prometheus = false/prometheus = true/" $HOME/.union/config/config.toml
 
 # create service
-sudo tee /etc/systemd/system/union.service > /dev/null << EOF
+sudo tee /etc/systemd/system/uniond.service > /dev/null <<EOF
 [Unit]
-Description=union node service
+Description=uniond
 After=network-online.target
 
 [Service]
 User=$USER
-ExecStart=$(which cosmovisor) run start --home=/home/union-testnet/.union/
+ExecStart=$(which uniond) start --home /root/.union
 Restart=on-failure
-RestartSec=10
+RestartSec=3
 LimitNOFILE=65535
-Environment="DAEMON_HOME=$HOME/.union"
-Environment="DAEMON_NAME=uniond"
-Environment="UNSAFE_SKIP_BACKUP=true"
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:$HOME/.union/cosmovisor/current/bin"
 
 [Install]
 WantedBy=multi-user.target
@@ -133,7 +124,6 @@ EOF
 # reset
 uniond tendermint unsafe-reset-all --home $HOME/.union --keep-addr-book 
 curl -L https://snapshots.kjnodes.com/union-testnet/snapshot_latest.tar.lz4 | tar -Ilz4 -xf - -C $HOME/.union
-[[ -f $HOME/.union/data/upgrade-info.json ]] && cp $HOME/.union/data/upgrade-info.json $HOME/.union/cosmovisor/genesis/upgrade-info.json
 
 # start service
 sudo systemctl daemon-reload
@@ -144,7 +134,7 @@ break
 ;;
 
 "Create Wallet")
-uniond keys add $WALLET
+uniond --home $HOME/.union keys add $WALLET
 echo "============================================================"
 echo "Save address and mnemonic"
 echo "============================================================"
