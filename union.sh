@@ -41,7 +41,7 @@ fi
 if [ ! $WALLET ]; then
 	echo "export WALLET=wallet" >> $HOME/.bash_profile
 fi
-echo "export UNION_CHAIN_ID=union-testnet-5" >> $HOME/.bash_profile
+echo "export UNION_CHAIN_ID=union-testnet-6" >> $HOME/.bash_profile
 source $HOME/.bash_profile
 
 # update
@@ -63,27 +63,30 @@ fi
 
 # download binary
 cd $HOME
-wget http://uniont.binary.stavr.tech:15/union/uniond
-chmod +x uniond
-mv uniond $HOME/go/bin/
+mkdir -p $HOME/go/bin
+curl -L https://snapshots-testnet.nodejumper.io/union-testnet/uniond-v0.19.0-linux-amd64 > $HOME/go/bin/uniond
+chmod +x $HOME/go/bin/uniond
 
 # config
-uniond config chain-id $UNION_CHAIN_ID
-uniond config keyring-backend test
+echo -e 'chain-id = "union-testnet-6"
+keyring-backend = "test"
+output = "text"
+node = "tcp://localhost:${portPrefix}57"
+broadcast-mode = "sync"' > $HOME/.union/config/client.toml
 
 # init
-uniond init $NODENAME bn254 --chain-id union-testnet-5
+uniond init $NODENAME bn254 --chain-id union-testnet-6
 
 # download genesis and addrbook
-wget -O $HOME/.union/config/genesis.json "https://raw.githubusercontent.com/obajay/nodes-Guides/main/Projects/Union/genesis.json"
-wget -O $HOME/.union/config/addrbook.json "https://raw.githubusercontent.com/obajay/nodes-Guides/main/Projects/Union/addrbook.json"
+curl -L https://snapshots-testnet.nodejumper.io/union-testnet/genesis.json > $HOME/.union/config/genesis.json
+curl -L https://snapshots-testnet.nodejumper.io/union-testnet/addrbook.json > $HOME/.union/config/addrbook.json
 
 # set minimum gas price
-sed -i -e "s|^minimum-gas-prices *=.*|minimum-gas-prices = \"0muno\"|" $HOME/.union/config/app.toml
+sed -i -e "s|^minimum-gas-prices *=.*|minimum-gas-prices = \"0.0025muno\"|" $HOME/.union/config/app.toml
 
 # set peers and seeds
-SEEDS="3f472746f46493309650e5a033076689996c8881@union-testnet.rpc.kjnodes.com:17159"
-PEERS="3ebf2e11e771ef7db14217e1a8fa365fdf028eb4@65.108.134.215:28656,017f2c708749c0a789e794f16face1b9662c63d0@23.111.23.233:16656,89e7c090409da29a3525ecd2e9676579cfab487c@213.239.214.73:26656,ec244b6ea1ff9314e32e269045d08035f53c71cd@167.235.178.134:24656,a3fb532f4386cfdf01a5a1bdf0a568457b9dc310@153.92.126.130:26656,2dad4529930a677fe267cedcac86043d09acdc36@65.108.105.48:24656,a24e67b59b0541a03d6faec19b74bc40a4cb1452@144.217.211.107:26656"
+SEEDS="f1d2674dc111d99dae4638234c502f4a4aaf8270@union.testnet.4.val.poisonphang.com:2665"
+PEERS="4d8427235a44a21ce84330ad850068c861ba3680@5.161.47.115:26656,cf73a8aca5ca1c08bbe65f7e0d987a226068fb89@162.250.127.226:41156,9f591758d3d9b23ffdca11e22fa030f678566c4e@88.99.3.158:24656,c7f5ad7a66ab1ebdbb2bb4b6cd55742130c2c82b@149.50.102.41:26656,a0e32aff7707fda85ff87fa8ea6f93d3196984aa@188.40.66.173:24656,214bd537d9eddb87ad1ff9604edcdf3d2f966297@95.217.12.125:26656,de45afe750c41193d2644083e23bd56bcf755177@209.126.86.119:26656,3da703a4195530d6811663da5a48296f6c35b12d@78.47.50.58:26656,7c4b0c65faff3800652a4c042f8b74ca4ca5a184@37.60.232.89:26656,037a00d59e94dc11ecbca06daccf16396fa9b76a@65.108.54.139:26656,97c29d9956f5c852114ad883338da7ae6adba49c@65.21.52.76:26656,52be617885c293a05e12c46665c1ce33aef034b7@63.229.234.75:26656,809f0b700fb6162ae902d1225d1d76f2d47ad58a@65.108.79.246:26709,f1d2674dc111d99dae4638234c502f4a4aaf8270@157.245.1.52:26656,b2f2c6ba26958a1daf5838dee130fe0f0d75518d@34.171.89.160:26656,b35d52a16abb313733882abb14ec1cc61e963cae@65.108.99.37:17156"
 sed -i -e "s/^seeds *=.*/seeds = \"$SEEDS\"/; s/^persistent_peers *=.*/persistent_peers = \"$PEERS\"/" $HOME/.union/config/config.toml
 
 # disable indexing
@@ -105,36 +108,33 @@ sed -i "s/snapshot-interval *=.*/snapshot-interval = 0/g" $HOME/.union/config/ap
 sed -i -e "s/prometheus = false/prometheus = true/" $HOME/.union/config/config.toml
 
 # create service
-sudo tee /etc/systemd/system/uniond.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/uniond.service > /dev/null << EOF
 [Unit]
-Description=uniond
+Description=Union node service
 After=network-online.target
-
 [Service]
 User=$USER
-ExecStart=$(which uniond) start --home /root/.union
+ExecStart=$(which uniond) start
 Restart=on-failure
-RestartSec=3
+RestartSec=10
 LimitNOFILE=65535
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # reset
-uniond tendermint unsafe-reset-all --home $HOME/.union --keep-addr-book 
-curl -L https://snapshots.kjnodes.com/union-testnet/snapshot_latest.tar.lz4 | tar -Ilz4 -xf - -C $HOME/.union
+uniond tendermint unsafe-reset-all --home $HOME/.union --keep-addr-book
+curl https://snapshots-testnet.nodejumper.io/union-testnet/union-testnet_latest.tar.lz4 | lz4 -dc - | tar -xf - -C $HOME/.union
 
 # start service
 sudo systemctl daemon-reload
-sudo systemctl enable union.service
-sudo systemctl restart union.service
-
+sudo systemctl enable uniond
+sudo systemctl restart uniond
 break
 ;;
 
 "Create Wallet")
-uniond --home $HOME/.union keys add $WALLET
+uniond keys add $WALLET
 echo "============================================================"
 echo "Save address and mnemonic"
 echo "============================================================"
@@ -149,19 +149,19 @@ break
 
 "Create Validator")
 uniond tx staking create-validator \
---amount 1000000muno \
---pubkey $(uniond tendermint show-validator) \
---moniker "$NODENAME" \
---chain-id union-testnet-5 \
---commission-rate 0.05 \
---commission-max-rate 0.20 \
---commission-max-change-rate 0.01 \
---min-self-delegation 1 \
---from wallet \
---gas-adjustment 1.4 \
---gas auto \
---gas-prices 0muno \
--y
+--amount=1000000muno \
+--pubkey=$(uniond tendermint show-validator) \
+--moniker=$NODENAME \
+--chain-id=union-testnet-6 \
+--commission-rate=0.10 \
+--commission-max-rate=0.20 \
+--commission-max-change-rate=0.01 \
+--min-self-delegation=1 \
+--from=wallet \
+--gas-prices=0.0025muno \
+--gas-adjustment=1.5 \
+--gas=auto \
+-y 
 
 break
 ;;
